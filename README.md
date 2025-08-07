@@ -9,6 +9,12 @@ cd be_flight
 
 ### Install Dependencies
 ```bash
+cd main_service
+go mod tidy
+go get .
+
+cd ..
+cd provider_service
 go mod tidy
 go get .
 ```
