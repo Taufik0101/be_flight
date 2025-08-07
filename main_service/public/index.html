@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Flight Search SSE</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        label { display: block; margin: 10px 0 5px; }
+        input, button { padding: 8px; width: 200px; }
+        pre { background: #f0f0f0; padding: 10px; margin-top: 20px; white-space: pre-wrap; display: none; }
+
+        .spinner {
+            display: none;
+            margin-top: 10px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<h1>Flight Search</h1>
+
+<form id="search-form">
+    <label>From: <input type="text" id="from" value="CGK" required></label>
+    <label>To: <input type="text" id="to" value="DPS" required></label>
+    <label>Date: <input type="date" id="date" value="2025-07-10" required></label>
+    <label>Passengers: <input type="number" id="passengers" value="1" min="1" required></label>
+    <button type="submit" id="submit-btn">Start Search</button>
+    <div class="spinner" id="spinner"></div>
+</form>
+
+<pre id="log"></pre>
+
+<script>
+    const form = document.getElementById('search-form');
+    const logEl = document.getElementById('log');
+    const spinner = document.getElementById('spinner');
+    const submitBtn = document.getElementById('submit-btn');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        logEl.style.display = 'block';
+        logEl.textContent = 'Submitting search...';
+
+        submitBtn.disabled = true;
+        spinner.style.display = 'inline-block';
+
+        const from = document.getElementById('from').value;
+        const to = document.getElementById('to').value;
+        const date = document.getElementById('date').value;
+        const passengers = parseInt(document.getElementById('passengers').value);
+
+        try {
+            const response = await fetch('http://localhost:3000/api/flights/search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ from, to, date, passengers })
+            });
+
+            const data = await response.json();
+            const searchId = data?.data?.search_id;
+
+            if (!searchId) {
+                logEl.textContent = 'failed to get search_id';
+                spinner.style.display = 'none';
+                submitBtn.disabled = false;
+                return;
+            }
+
+            logEl.textContent = `search started with ID: ${searchId}\n\n`;
+
+            const sse = new EventSource(`http://localhost:3000/api/flights/search/${searchId}/stream`);
+
+            sse.onmessage = (event) => {
+                try {
+                    const parsed = JSON.parse(event.data);
+
+                    if (typeof parsed.results === 'string') {
+                        try {
+                            parsed.results = JSON.parse(parsed.results);
+                        } catch (e) {}
+                    }
+
+                    if (parsed.status === "completed") {
+                        logEl.textContent = `⌛ Data found for ID: ${searchId}\n\n${JSON.stringify(parsed, null, 2)}\n\n`;
+                    } else {
+                        logEl.textContent = `${JSON.stringify(parsed, null, 2)}\n\n`;
+                    }
+                } catch (e) {
+                    logEl.textContent += `${event.data}\n`;
+                }
+
+                if (event.data.includes('"total_results"')) {
+                    spinner.style.display = 'none';
+                    submitBtn.disabled = false;
+                }
+            };
+
+            sse.onerror = (err) => {
+                spinner.style.display = 'none';
+                submitBtn.disabled = false;
+                if (sse && sse.readyState !== EventSource.CLOSED) {
+                    sse.close();
+                }
+            };
+        } catch (err) {
+            logEl.textContent = `request failed: ${err.message}`;
+            spinner.style.display = 'none';
+            submitBtn.disabled = false;
+        }
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7.2
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  main-service:
+    build:
+      context: ./main_service
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+    environment:
+      - PORT=3000
+      - REDIS_ADDR=redis:6379
+
+  provider-service:
+    build:
+      context: ./provider_service
+    depends_on:
+      - redis
+    environment:
+      - REDIS_ADDR=redis:6379
+
+volumes:
+  redis_data:
